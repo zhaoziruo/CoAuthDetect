@@ -44,9 +44,12 @@ paraphrasing is a post-hoc transformation, not a new authoring process.
 │   ├── xsum_ids.txt              # 600 BBC document IDs
 │   ├── xsum_gpt.json             # 1,800 records
 │   └── xsum_claude.json          # 1,800 records
-└── scripts/
-    ├── load_dataset.py           # loading / normalising helper + CLI preview
-    └── verify_dataset.py         # integrity checks over the release
+├── scripts/
+│   ├── load_dataset.py           # loading / normalising helper + CLI preview
+│   ├── verify_dataset.py         # integrity checks over the release
+│   └── build_splits.py           # release + your human texts -> train/val/test CSV
+└── train/
+    └── train_detector.py         # 4-class detector, reference implementation
 ```
 
 Total: **8,418 records × 3 text fields = 25,254 texts.**
@@ -110,7 +113,8 @@ with raw LaTeX input.
 - Human-written texts (see above).
 - The held-out **GPT-5.1** adversarial evaluation sets described in the paper (§5.3), which are used only for
   robustness evaluation and are not part of this release.
-- Model checkpoints and training code.
+- Model checkpoints. Training code **is** included (`train/train_detector.py`); the
+  trained weights are not.
 
 ## Usage
 
@@ -129,6 +133,70 @@ xsum_gpt = load_split("xsum", "gpt4o")            # one source/generator split
 r = xsum_gpt[0]
 text, label = r["dipper"], r["ai_involvement"]
 ```
+
+## Training a detector
+
+The release ships AI-involved texts; the human-written class is not
+redistributed, so training takes two steps. First recover the human texts from
+the published ID lists (see [Human-written data](#human-written-data)) into a
+file keyed by document ID — JSON, JSONL or CSV, with one column holding the ID
+exactly as it appears in the ID list and another holding the text:
+
+```jsonc
+[{"bbcid": 25265945, "text": "Matteo Renzi came to power in February 2014 ..."}, ...]
+```
+
+Then build the splits and train:
+
+```bash
+pip install torch transformers datasets scikit-learn scipy pandas
+
+python scripts/build_splits.py --source xsum --generator gpt4o \
+    --human xsum_human.json --adversarial level1 --out-dir splits/
+
+python train/train_detector.py \
+    --model_name_or_path FacebookAI/roberta-large \
+    --do_train --do_eval --do_predict \
+    --train_file splits/train.csv \
+    --validation_file splits/val.csv \
+    --test_file splits/test-level1.csv \
+    --max_seq_length 512 \
+    --per_device_train_batch_size 8 --gradient_accumulation_steps 2 \
+    --learning_rate 3e-5 --num_train_epochs 5 --fp16 \
+    --output_dir runs/xsum-gpt4o-level1
+```
+
+`build_splits.py` writes `train.csv` and `val.csv` at the requested adversarial
+level, plus **all three** test conditions (`test-benign.csv`, `test-level1.csv`,
+`test-level2.csv`) and a `manifest.json` recording what was built. Labels are
+`0=human, 1=low_ai, 2=high_ai, 3=fully_ai`.
+
+`--adversarial` selects which levels enter *training*:
+
+| Value | Training rows |
+|---|---|
+| `benign` | human + the three AI classes at `text` |
+| `level1` | `benign` + the three AI classes at `dipper` |
+| `level2` | `level1` + the three AI classes at `dipper_dipper` |
+
+A DIPPER paraphrase keeps the label of its source text, so adding a level adds
+rows without adding classes. Documents are partitioned *before* expansion, so no
+source document appears in more than one split — `build_splits.py` asserts this.
+
+The split is 70/15/15 by document, cut in the order documents appear in the
+release files, which reproduces the partition used in the paper. `--shuffle-seed`
+re-partitions for a seed sweep (and will not reproduce the paper).
+
+To fill in the robustness table, train once and run `--do_predict` against each
+of the three test conditions in turn. Metrics land in `test_results.json`:
+accuracy, macro-F1, per-class F1, and macro-AUC (one-vs-rest). Macro-F1 is the
+headline number — `high_ai` and `fully_ai` are the confusable pair, and accuracy
+alone hides that.
+
+`--class_weights balanced` (the default) weights by inverse class frequency.
+Levels `level1` and `level2` add DIPPER rows to the three AI classes but not to
+the human class, so training at those levels is imbalanced; a `benign` split is
+balanced and can use `--class_weights none`.
 
 ## Prompts
 
