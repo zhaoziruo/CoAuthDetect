@@ -115,10 +115,12 @@ with raw LaTeX input.
 - Model checkpoints. Training code **is** included (`scripts/train_detector.py`); the
   trained weights are not.
 
-## Usage
+## Inspecting the release
+
+`load_dataset.py` and `build_splits.py` are standard library only — nothing to
+install until you train.
 
 ```bash
-python scripts/verify_dataset.py          # sanity-check the release
 python scripts/load_dataset.py --stats    # per-file counts and length statistics
 ```
 
@@ -133,40 +135,27 @@ r = xsum_gpt[0]
 text, label = r["dipper"], r["ai_involvement"]
 ```
 
-## Training a detector
+`python scripts/verify_dataset.py` re-checks the release against the published
+ID lists if you want to confirm your copy is intact.
 
-The release ships AI-involved texts; the human-written class is not
-redistributed, so training takes two steps. First recover the human texts from
-the published ID lists (see [Human-written data](#human-written-data)) into a
-file keyed by document ID — JSON, JSONL or CSV, with one column holding the ID
-exactly as it appears in the ID list and another holding the text:
+## Building the splits
+
+The release ships AI-involved texts only, so first recover the human-written
+class from the published ID lists (see [Human-written data](#human-written-data))
+into a file keyed by document ID — JSON, JSONL or CSV, with one column holding
+the ID exactly as it appears in the ID list and another holding the text:
 
 ```jsonc
 [{"bbcid": 25265945, "text": "Matteo Renzi came to power in February 2014 ..."}, ...]
 ```
 
-Then build the splits and train:
-
 ```bash
-pip install torch transformers datasets scikit-learn scipy pandas
-
 python scripts/build_splits.py --source xsum --generator gpt4o \
     --human xsum_human.json --adversarial level1 --out-dir splits/
-
-python scripts/train_detector.py \
-    --model_name_or_path FacebookAI/roberta-large \
-    --do_train --do_eval --do_predict \
-    --train_file splits/train.csv \
-    --validation_file splits/val.csv \
-    --test_file splits/test-level1.csv \
-    --max_seq_length 512 \
-    --per_device_train_batch_size 8 --gradient_accumulation_steps 2 \
-    --learning_rate 3e-5 --num_train_epochs 5 --fp16 \
-    --output_dir runs/xsum-gpt4o-level1
 ```
 
-`build_splits.py` writes `train.csv` and `val.csv` at the requested adversarial
-level, plus **all three** test conditions (`test-benign.csv`, `test-level1.csv`,
+This writes `train.csv` and `val.csv` at the requested adversarial level, plus
+**all three** test conditions (`test-benign.csv`, `test-level1.csv`,
 `test-level2.csv`) and a `manifest.json` recording what was built. Labels are
 `0=human, 1=low_ai, 2=high_ai, 3=fully_ai`.
 
@@ -185,6 +174,23 @@ source document appears in more than one split — `build_splits.py` asserts thi
 The split is 70/15/15 by document, cut in the order documents appear in the
 release files, which reproduces the partition used in the paper. `--shuffle-seed`
 re-partitions for a seed sweep (and will not reproduce the paper).
+
+## Training a detector
+
+```bash
+pip install torch transformers datasets scikit-learn scipy pandas
+
+python scripts/train_detector.py \
+    --model_name_or_path FacebookAI/roberta-large \
+    --do_train --do_eval --do_predict \
+    --train_file splits/train.csv \
+    --validation_file splits/val.csv \
+    --test_file splits/test-level1.csv \
+    --max_seq_length 512 \
+    --per_device_train_batch_size 8 --gradient_accumulation_steps 2 \
+    --learning_rate 3e-5 --num_train_epochs 5 --fp16 \
+    --output_dir runs/xsum-gpt4o-level1
+```
 
 To fill in the robustness table, train once and run `--do_predict` against each
 of the three test conditions in turn. Metrics land in `test_results.json`:
