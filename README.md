@@ -44,11 +44,10 @@ paraphrasing is a post-hoc transformation, not a new authoring process.
 │   ├── xsum_ids.txt              # 600 BBC document IDs
 │   ├── xsum_gpt.json             # 1,800 records
 │   └── xsum_claude.json          # 1,800 records
-├── scripts/
-│   ├── load_dataset.py           # loading / normalising helper + CLI preview
-│   ├── verify_dataset.py         # integrity checks over the release
-│   └── build_splits.py           # release + your human texts -> train/val/test CSV
-└── train/
+└── scripts/
+    ├── load_dataset.py           # loading / normalising helper + CLI preview
+    ├── verify_dataset.py         # integrity checks over the release
+    ├── build_splits.py           # release + your human texts -> train/val/test CSV
     └── train_detector.py         # 4-class detector, reference implementation
 ```
 
@@ -113,7 +112,7 @@ with raw LaTeX input.
 - Human-written texts (see above).
 - The held-out **GPT-5.1** adversarial evaluation sets described in the paper (§5.3), which are used only for
   robustness evaluation and are not part of this release.
-- Model checkpoints. Training code **is** included (`train/train_detector.py`); the
+- Model checkpoints. Training code **is** included (`scripts/train_detector.py`); the
   trained weights are not.
 
 ## Usage
@@ -154,7 +153,7 @@ pip install torch transformers datasets scikit-learn scipy pandas
 python scripts/build_splits.py --source xsum --generator gpt4o \
     --human xsum_human.json --adversarial level1 --out-dir splits/
 
-python train/train_detector.py \
+python scripts/train_detector.py \
     --model_name_or_path FacebookAI/roberta-large \
     --do_train --do_eval --do_predict \
     --train_file splits/train.csv \

@@ -18,7 +18,7 @@ build them first:
     python scripts/build_splits.py --source xsum --generator gpt4o \
         --human xsum_human.json --adversarial level1 --out-dir splits/
 
-    python train/train_detector.py \
+    python scripts/train_detector.py \
         --model_name_or_path FacebookAI/roberta-large \
         --do_train --do_eval --do_predict \
         --train_file splits/train.csv \
